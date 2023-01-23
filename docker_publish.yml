@@ -1,0 +1,48 @@
+name: Publish Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string  
+      dockerfile:
+        required: false
+        default: Dockerfile
+        type: string
+        
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+        
+      - name: Download Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: publish
+          path: publish
+
+      - name: Build image
+        run: docker build . --file ${{ inputs.dockerfile }} --tag ${{ inputs.image_name }}
+
+      - name: Log into registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push image
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository }}/${{ inputs.image_name }}
+          # Change all uppercase to lowercase
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          # Strip git ref prefix from version
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          # Strip "v" prefix from tag name
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+          # Use Docker `latest` tag convention
+          [ "$VERSION" == "master" ] || [ "$VERSION" == "main" ] && VERSION=latest
+          echo IMAGE_ID=$IMAGE_ID
+          echo VERSION=$VERSION
+          docker tag ${{ inputs.image_name }} $IMAGE_ID:$VERSION
+          docker push $IMAGE_ID:$VERSION
